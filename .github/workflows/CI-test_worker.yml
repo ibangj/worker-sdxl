@@ -54,7 +54,17 @@ jobs:
 
       - name: Execute Tests
         run: |
+          # Run extension tests first
+          python src/test_extensions.py
+          
+          # Then run the original tests
           python src/rp_handler.py --test_input='{"input": "test"}'
+          
+          # Test ControlNet functionality
+          python src/rp_handler.py --test_input='{"input": {"prompt": "Test image", "use_controlnet": true, "control_type": "canny"}}'
+          
+          # Test ReActor face swap functionality
+          python src/rp_handler.py --test_input='{"input": {"prompt": "Portrait of a person", "use_reactor": true, "source_face_image": "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/diffusers/person_image.png"}}'
 
   terminate_worker:
     if: ${{ always() && !success() }}

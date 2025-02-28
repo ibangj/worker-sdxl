@@ -23,8 +23,8 @@ RUN pip install opencv-python-headless insightface onnxruntime
 
 # Download ControlNet models
 RUN mkdir -p /controlnet
-RUN wget https://huggingface.co/lllyasviel/sd-controlnet-canny/resolve/main/model.safetensors -O /controlnet/control_canny.safetensors
-RUN wget https://huggingface.co/lllyasviel/sd-controlnet-depth/resolve/main/model.safetensors -O /controlnet/control_depth.safetensors
+RUN wget https://huggingface.co/diffusers/controlnet-canny-sdxl-1.0/resolve/main/diffusion_pytorch_model.safetensors -O /controlnet/control_canny.safetensors
+RUN wget https://huggingface.co/diffusers/controlnet-depth-sdxl-1.0/resolve/main/diffusion_pytorch_model.safetensors -O /controlnet/control_depth.safetensors
 # Add other ControlNet models as needed
 
 # Download ReActor face model
