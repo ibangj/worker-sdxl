@@ -5,21 +5,12 @@ import requests
 import time
 from tqdm import tqdm
 
-# Model URLs
-MODELS = {
-    "controlnet_canny": {
-        "url": "https://huggingface.co/diffusers/controlnet-canny-sdxl-1.0/resolve/main/diffusion_pytorch_model.safetensors",
-        "path": "/controlnet/control_canny.safetensors"
-    },
-    "controlnet_depth": {
-        "url": "https://huggingface.co/diffusers/controlnet-depth-sdxl-1.0/resolve/main/diffusion_pytorch_model.safetensors",
-        "path": "/controlnet/control_depth.safetensors"
-    },
-    "reactor_face": {
-        "url": "https://github.com/facefusion/facefusion-assets/releases/download/models/inswapper_128.onnx",
-        "path": "/reactor/inswapper_128.onnx"
-    }
-}
+# Import shared configuration
+from config import MODEL_PATHS, MODEL_URLS
+
+# Prepare model data with URLs and paths
+MODELS = {model_name: {"url": MODEL_URLS[model_name], "path": path} 
+          for model_name, path in MODEL_PATHS.items()}
 
 def verify_url(url):
     """Verify that a URL exists and is accessible"""
@@ -71,6 +62,9 @@ def main():
         if os.path.exists(path):
             print(f"✅ {model_name} already exists at {path}")
             continue
+        
+        # Create directory if needed
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         
         # Verify URL before downloading
         print(f"🔍 Verifying URL for {model_name}...")

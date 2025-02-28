@@ -3,10 +3,13 @@ import torch
 from diffusers import ControlNetModel
 import onnxruntime
 
+# Import shared configuration
+from config import MODEL_PATHS, PROVIDERS
+
 def test_controlnet_models():
     # Check if ControlNet models exist
-    canny_path = "/controlnet/control_canny.safetensors"
-    depth_path = "/controlnet/control_depth.safetensors"
+    canny_path = MODEL_PATHS["controlnet_canny"]
+    depth_path = MODEL_PATHS["controlnet_depth"]
     
     if not os.path.exists(canny_path):
         print("❌ ControlNet Canny model not found")
@@ -29,7 +32,7 @@ def test_controlnet_models():
 
 def test_reactor():
     # Check if ReActor model exists
-    reactor_path = "/reactor/inswapper_128.onnx"
+    reactor_path = MODEL_PATHS["reactor_face"]
     
     if not os.path.exists(reactor_path):
         print("❌ ReActor face model not found")
@@ -39,7 +42,7 @@ def test_reactor():
     try:
         face_swapper = onnxruntime.InferenceSession(
             reactor_path, 
-            providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
+            providers=PROVIDERS
         )
         print("✅ ReActor model loaded successfully")
     except Exception as e:

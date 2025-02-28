@@ -23,8 +23,13 @@ from runpod.serverless.utils import rp_upload, rp_cleanup
 from runpod.serverless.utils.rp_validator import validate
 
 from rp_schemas import INPUT_SCHEMA
+# Import the extensions module
+from extensions import init_extensions, process_with_controlnet, apply_reactor, download_image, EXTENSIONS_SCHEMA
 
 torch.cuda.empty_cache()
+
+# Merge schemas
+MERGED_SCHEMA = {**INPUT_SCHEMA, **EXTENSIONS_SCHEMA}
 
 # ------------------------------- Model Handler ------------------------------ #
 
@@ -34,6 +39,8 @@ class ModelHandler:
         self.base = None
         self.refiner = None
         self.load_models()
+        # Initialize extensions
+        init_extensions()
 
     def load_base(self):
         vae = AutoencoderKL.from_pretrained(
@@ -109,13 +116,17 @@ def generate_image(job):
     job_input = job["input"]
 
     # Input validation
-    validated_input = validate(job_input, INPUT_SCHEMA)
+    validated_input = validate(job_input, MERGED_SCHEMA)
 
     if 'errors' in validated_input:
         return {"error": validated_input['errors']}
     job_input = validated_input['validated_input']
 
-    starting_image = job_input['image_url']
+    starting_image = job_input.get('image_url')
+    
+    # Extension flags
+    use_controlnet = job_input.get('use_controlnet', False)
+    use_reactor = job_input.get('use_reactor', False)
 
     if job_input['seed'] is None:
         job_input['seed'] = int.from_bytes(os.urandom(2), "big")
@@ -125,7 +136,28 @@ def generate_image(job):
     MODELS.base.scheduler = make_scheduler(
         job_input['scheduler'], MODELS.base.scheduler.config)
 
-    if starting_image:  # If image_url is provided, run only the refiner pipeline
+    # Handle ControlNet if requested
+    if use_controlnet and job_input.get('control_image'):
+        control_images, message = process_with_controlnet(
+            MODELS.base,
+            prompt=job_input['prompt'],
+            negative_prompt=job_input.get('negative_prompt'),
+            control_image=job_input['control_image'],
+            control_type=job_input.get('control_type', 'canny'),
+            width=job_input['width'],
+            height=job_input['height'],
+            num_inference_steps=job_input['num_inference_steps'],
+            guidance_scale=job_input['guidance_scale'],
+            controlnet_conditioning_scale=job_input.get('controlnet_conditioning_scale', 0.5),
+            seed=job_input['seed']
+        )
+        
+        if message != "Success":
+            return {"error": message}
+            
+        output = control_images
+    
+    elif starting_image:  # If image_url is provided, run only the refiner pipeline
         init_image = load_image(starting_image).convert("RGB")
         output = MODELS.refiner(
             prompt=job_input['prompt'],
@@ -134,6 +166,7 @@ def generate_image(job):
             image=init_image,
             generator=generator
         ).images
+    
     else:
         # Generate latent image using pipe
         image = MODELS.base(
@@ -163,6 +196,27 @@ def generate_image(job):
                 "error": f"RuntimeError: {err}, Stack Trace: {err.__traceback__}",
                 "refresh_worker": True
             }
+
+    # Apply ReActor face swap if requested
+    if use_reactor and job_input.get('source_face_image'):
+        try:
+            # Download source face image
+            source_face = download_image(job_input['source_face_image'])
+            
+            new_output = []
+            for img in output:
+                result_image, message = apply_reactor(
+                    img, 
+                    source_face, 
+                    job_input.get('target_faces_index')
+                )
+                if message != "Success":
+                    return {"error": message}
+                new_output.append(result_image)
+            
+            output = new_output
+        except Exception as e:
+            return {"error": f"Error in ReActor: {str(e)}"}
 
     image_urls = _save_and_upload_images(output, job['id'])
 

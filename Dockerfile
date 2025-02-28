@@ -25,6 +25,7 @@ RUN mkdir -p /controlnet /reactor
 ADD src .
 
 # Add startup script to download models at runtime
+COPY src/config.py /config.py
 COPY src/download_models.py /download_models.py
 COPY src/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
