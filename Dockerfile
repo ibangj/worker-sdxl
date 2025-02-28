@@ -14,21 +14,20 @@ COPY builder/cache_models.py /cache_models.py
 RUN python3.11 /cache_models.py && \
     rm /cache_models.py
 
+# Install ControlNet and ReActor dependencies
+RUN pip install diffusers==0.21.4 transformers==4.31.0 accelerate==0.21.0
+RUN pip install opencv-python-headless insightface onnxruntime requests
+
+# Create directories for models
+RUN mkdir -p /controlnet /reactor
+
 # Add src files (Worker Template)
 ADD src .
 
-# Install ControlNet and ReActor dependencies
-RUN pip install diffusers==0.21.4 transformers==4.31.0 accelerate==0.21.0
-RUN pip install opencv-python-headless insightface onnxruntime
+# Add startup script to download models at runtime
+COPY src/download_models.py /download_models.py
+COPY src/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
-# Download ControlNet models
-RUN mkdir -p /controlnet
-RUN wget https://huggingface.co/diffusers/controlnet-canny-sdxl-1.0/resolve/main/diffusion_pytorch_model.safetensors -O /controlnet/control_canny.safetensors
-RUN wget https://huggingface.co/diffusers/controlnet-depth-sdxl-1.0/resolve/main/diffusion_pytorch_model.safetensors -O /controlnet/control_depth.safetensors
-# Add other ControlNet models as needed
-
-# Download ReActor face model
-RUN mkdir -p /reactor
-RUN wget https://github.com/facefusion/facefusion-assets/releases/download/models/inswapper_128.onnx -O /reactor/inswapper_128.onnx
-
-CMD python3.11 -u /rp_handler.py
+# Use the entrypoint script
+ENTRYPOINT ["/entrypoint.sh"]
