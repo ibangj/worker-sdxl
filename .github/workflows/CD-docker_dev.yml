@@ -1,4 +1,4 @@
-name: CD | Dev Docker Image (RunPod Builder)
+name: CD | Dev Docker Image (GitHub Actions Builder)
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
       - "refs/tags/*"
 
 jobs:
-  build-on-runpod:
+  build-docker-image:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -47,119 +47,37 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
-        
-      - name: Create optimized build context
-        run: |
-          # Create a unique identifier for this build
-          CONTEXT_ID="${{ github.sha }}-$(date +%s)"
-          echo "CONTEXT_ID=${CONTEXT_ID}" >> $GITHUB_ENV
-          
-          # Create highly optimized archive with extensive exclusions
-          tar -czf context.tar.gz \
-            --exclude='.git' \
-            --exclude='*.safetensors' \
-            --exclude='*.onnx' \
-            --exclude='*.bin' \
-            --exclude='*.pt' \
-            --exclude='*.pth' \
-            --exclude='__pycache__' \
-            --exclude='*.pyc' \
-            --exclude='models/*' \
-            --exclude='output/*' \
-            --exclude='logs/*' \
-            --exclude='tests/*' \
-            --exclude='temp/*' \
-            --exclude='cache/*' \
-            --exclude='node_modules/*' \
-            .
-          
-          # Show the size of the archive
-          ls -lh context.tar.gz
-          
-      - name: Upload build context to S3
-        run: |
-          # Upload to S3 with the unique identifier
-          aws s3 cp context.tar.gz s3://${{ secrets.AWS_S3_BUCKET }}/${{ env.CONTEXT_ID }}.tar.gz
-          
-          # Generate pre-signed URL for the RunPod builder to access (expires in 1 hour)
-          CONTEXT_URL=$(aws s3 presign s3://${{ secrets.AWS_S3_BUCKET }}/${{ env.CONTEXT_ID }}.tar.gz --expires-in 3600)
-          echo "CONTEXT_URL=${CONTEXT_URL}" >> $GITHUB_ENV
-          
-      - name: Trigger RunPod build
-        id: runpod_build
-        run: |
-          # Prepare build request
-          cat > build_request.json << EOF
-          {
-            "input": {
-              "dockerfile": "Dockerfile",
-              "context_url": "${{ env.CONTEXT_URL }}",
-              "repository": "${{ secrets.DOCKERHUB_USERNAME }}/${{ secrets.DOCKERHUB_REPO }}",
-              "tag": "${{ github.ref == 'refs/heads/main' && 'dev' || github.sha }}",
-              "docker_username": "${{ secrets.DOCKERHUB_USERNAME }}",
-              "docker_password": "${{ secrets.DOCKERHUB_TOKEN }}"
-            }
-          }
-          EOF
-          
-          # Send request to RunPod endpoint
-          RESPONSE=$(curl -s -X POST \
-            -H "Content-Type: application/json" \
-            -H "Authorization: Bearer ${{ secrets.RUNPOD_API_KEY }}" \
-            --data @build_request.json \
-            https://api.runpod.io/v2/${{ secrets.RUNPOD_ENDPOINT_ID }}/run)
-          
-          echo "RunPod job initiated: $RESPONSE"
-          JOB_ID=$(echo $RESPONSE | jq -r '.id')
-          echo "JOB_ID=${JOB_ID}" >> $GITHUB_ENV
-          
-      - name: Wait for build to complete
-        run: |
-          echo "Waiting for RunPod build job ${{ env.JOB_ID }} to complete..."
-          
-          # Initialize timeout variables (30 minutes = 1800 seconds)
-          START_TIME=$(date +%s)
-          TIMEOUT=1800
-          
-          while true; do
-            # Check if we've exceeded the timeout
-            CURRENT_TIME=$(date +%s)
-            ELAPSED_TIME=$((CURRENT_TIME - START_TIME))
-            if [ $ELAPSED_TIME -gt $TIMEOUT ]; then
-              echo "Build timed out after $TIMEOUT seconds!"
-              exit 1
-            fi
-            
-            # Check job status
-            STATUS_RESPONSE=$(curl -s -H "Authorization: Bearer ${{ secrets.RUNPOD_API_KEY }}" \
-              https://api.runpod.io/v2/${{ secrets.RUNPOD_ENDPOINT_ID }}/status/${{ env.JOB_ID }})
-            
-            STATUS=$(echo $STATUS_RESPONSE | jq -r '.status')
-            
-            if [ "$STATUS" == "COMPLETED" ]; then
-              echo "Build completed successfully!"
-              break
-            elif [ "$STATUS" == "FAILED" ]; then
-              echo "Build failed!"
-              # Get the error message if available
-              ERROR=$(echo $STATUS_RESPONSE | jq -r '.error // "Unknown error"')
-              echo "Error: $ERROR"
-              exit 1
-            fi
-            
-            echo "Still building... Status: $STATUS (${ELAPSED_TIME}s elapsed)"
-            sleep 30
-          done
-          
-          # Get build output
-          OUTPUT=$(curl -s -H "Authorization: Bearer ${{ secrets.RUNPOD_API_KEY }}" \
-            https://api.runpod.io/v2/${{ secrets.RUNPOD_ENDPOINT_ID }}/output/${{ env.JOB_ID }})
-          
-          echo "Build output: $OUTPUT"
       
-      - name: Cleanup S3 artifact
-        if: always()
+      - name: Download large files from S3 (if needed)
         run: |
-          # Always clean up the S3 object, even if the workflow fails
-          aws s3 rm s3://${{ secrets.AWS_S3_BUCKET }}/${{ env.CONTEXT_ID }}.tar.gz
-          echo "Cleaned up S3 artifact"
+          # Create directories for downloaded files
+          mkdir -p models
+
+          # Example: Download specific model files that are too large for Git
+          # aws s3 cp s3://${{ secrets.AWS_S3_BUCKET }}/models/your_large_model.safetensors models/
+          
+          # List what was downloaded
+          ls -la models/
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+        
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/${{ secrets.DOCKERHUB_REPO }}:${{ github.ref == 'refs/heads/main' && 'dev' || github.sha }}
+          cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/${{ secrets.DOCKERHUB_REPO }}:buildcache
+          cache-to: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/${{ secrets.DOCKERHUB_REPO }}:buildcache,mode=max
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
+      
+      - name: Image digest
+        run: echo "Docker image has been built and pushed to DockerHub"
