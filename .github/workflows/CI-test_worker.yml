@@ -12,52 +12,24 @@ on:
   workflow_dispatch:
 
 jobs:
-  initialize_worker:
-    runs-on: ubuntu-latest
-    outputs:
-      id: ${{ steps.extract_id.outputs.runpod_job_id }}
-
-    steps:
-      - name: Deploy Worker
-        id: deploy
-        uses: fjogeleit/http-request-action@v1
-        with:
-          url: "https://api.runpod.ai/v2/${{ vars.RUNNER_24GB }}/run"
-          method: "POST"
-          customHeaders: '{"Content-Type": "application/json"}'
-          bearerToken: ${{ secrets.RUNPOD_API_KEY }}
-          data: '{"input":{"github_pat": "${{ secrets.GH_PAT }}", "github_org":"${{ vars.GH_ORG }}"}}'
-
-      - name: Extract Job ID
-        id: extract_id
-        run: |
-          ID=$(echo '${{ steps.deploy.outputs.response }}' | jq -r '.id')
-          echo "::set-output name=runpod_job_id::$ID"
-
   run_tests:
-    needs: initialize_worker
-    runs-on: runpod
+    runs-on: self-hosted
 
     steps:
       - uses: actions/checkout@v3
-
-      - name: Set up Python 3.11 & install dependencies
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.11"
 
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r builder/requirements.txt
-          apt-get install ffmpeg libsm6 libxext6 -y
+          apt-get install ffmpeg libsm6 libxext6 -y || true
 
       - name: Execute Tests
         run: |
-          # Run extension tests first
+          # Run extension tests
           python src/test_extensions.py
           
-          # Then run the original tests
+          # Then run the API tests
           python src/rp_handler.py --test_input='{"input": "test"}'
           
           # Test ControlNet functionality
@@ -65,17 +37,3 @@ jobs:
           
           # Test ReActor face swap functionality
           python src/rp_handler.py --test_input='{"input": {"prompt": "Portrait of a person", "use_reactor": true, "source_face_image": "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/diffusers/person_image.png"}}'
-
-  terminate_worker:
-    if: ${{ always() && !success() }}
-    needs: initialize_worker
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Shutdown Worker
-        uses: fjogeleit/http-request-action@v1
-        with:
-          url: "https://api.runpod.ai/v2/${{ vars.RUNNER_24GB }}/cancel/${{ needs.initialize_worker.outputs.id }}"
-          method: "POST"
-          customHeaders: '{"Content-Type": "application/json"}'
-          bearerToken: ${{ secrets.RUNPOD_API_KEY }}

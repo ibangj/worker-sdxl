@@ -14,10 +14,6 @@ COPY builder/cache_models.py /cache_models.py
 RUN python3.11 /cache_models.py && \
     rm /cache_models.py
 
-# Install ControlNet and ReActor dependencies
-RUN pip install diffusers==0.21.4 transformers==4.31.0 accelerate==0.21.0
-RUN pip install opencv-python-headless insightface onnxruntime requests
-
 # Create directories for models
 RUN mkdir -p /controlnet /reactor
 
