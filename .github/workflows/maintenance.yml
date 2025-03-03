@@ -1,0 +1,32 @@
+name: Maintenance
+
+on:
+  schedule:
+    - cron: '0 0 * * *'  # Run daily at midnight
+  workflow_dispatch:  # Allow manual triggering
+
+jobs:
+  cleanup:
+    name: Cleanup Runner
+    runs-on: self-hosted
+    
+    steps:
+    - name: Clean Docker system
+      run: |
+        echo "Cleaning Docker system..."
+        docker system prune -af --volumes
+        
+    - name: Remove old logs
+      run: |
+        echo "Removing old log files..."
+        find /home/runner -name "*.log" -type f -mtime +7 -delete || true
+        
+    - name: Clear temporary files
+      run: |
+        echo "Clearing temporary files..."
+        rm -rf /tmp/* || true
+        
+    - name: Check disk space
+      run: |
+        echo "Current disk space usage:"
+        df -h 
