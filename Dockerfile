@@ -9,6 +9,10 @@ RUN python3.11 -m pip install --upgrade pip && \
     python3.11 -m pip install --upgrade -r /requirements.txt --no-cache-dir && \
     rm /requirements.txt
 
+# Install system dependencies
+RUN sudo apt-get update && \
+    sudo apt-get install -y python3-dev build-essential libssl-dev
+
 # Cache Models
 COPY builder/cache_models.py /cache_models.py
 RUN python3.11 /cache_models.py && \
