@@ -1,4 +1,4 @@
-name: CD | Dev Docker Image (GitHub Actions Builder)
+name: CD | Dev Docker Image
 
 on:
   push:
@@ -6,78 +6,39 @@ on:
       - "refs/tags/*"
 
 jobs:
-  build-docker-image:
+  docker:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-        with:
-          # Shallow clone to minimize disk space
-          fetch-depth: 1
-        
-      - name: Enhanced disk space cleanup
+      - name: Clear Space
         run: |
-          echo "Before cleanup:"
-          df -h
-          
-          # Remove large unnecessary directories
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /opt/ghc
-          sudo rm -rf /opt/hostedtoolcache/CodeQL
-          sudo rm -rf /usr/local/.ghcup
-          
-          # Clean Docker aggressively
-          docker system prune -af
-          
-          # Clean apt cache
-          sudo apt clean
-          sudo rm -rf /var/lib/apt/lists/*
-          
-          # Remove swap file if it exists
-          sudo swapoff -a
-          sudo rm -f /swapfile
-          
-          echo "After cleanup:"
-          df -h
-        
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v1
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
-      
-      - name: Download large files from S3 (if needed)
-        run: |
-          # Create directories for downloaded files
-          mkdir -p models
+          rm -rf /usr/share/dotnet
+          rm -rf /opt/ghc
+          rm -rf "/usr/local/share/boost"
+          rm -rf "$AGENT_TOOLSDIRECTORY"
 
-          # Example: Download specific model files that are too large for Git
-          # aws s3 cp s3://${{ secrets.AWS_S3_BUCKET }}/models/your_large_model.safetensors models/
-          
-          # List what was downloaded
-          ls -la models/
-      
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
-        
-      - name: Login to DockerHub
+
+      - name: Login to Docker Hub
         uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      
-      - name: Build and push Docker image
+
+      - name: Determine Docker tag
+        id: docker-tag
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "DOCKER_TAG=dev" >> $GITHUB_ENV
+          else
+            echo "DOCKER_TAG=${{ github.sha }}" >> $GITHUB_ENV
+          fi
+
+      - name: Build and push
         uses: docker/build-push-action@v4
         with:
-          context: .
           push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/${{ secrets.DOCKERHUB_REPO }}:${{ github.ref == 'refs/heads/main' && 'dev' || github.sha }}
-          cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/${{ secrets.DOCKERHUB_REPO }}:buildcache
-          cache-to: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/${{ secrets.DOCKERHUB_REPO }}:buildcache,mode=max
-          build-args: |
-            BUILDKIT_INLINE_CACHE=1
-      
-      - name: Image digest
-        run: echo "Docker image has been built and pushed to DockerHub"
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/${{ secrets.DOCKERHUB_REPO }}:${{ env.DOCKER_TAG }}
