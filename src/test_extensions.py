@@ -32,21 +32,21 @@ def test_controlnet_models():
 
 def test_reactor():
     # Check if ReActor model exists
-    reactor_path = MODEL_PATHS["reactor_face"]
+    face_swap_path = MODEL_PATHS["face_swap"]
     
-    if not os.path.exists(reactor_path):
-        print("❌ ReActor face model not found")
+    if not os.path.exists(face_swap_path):
+        print("❌ Face swap model not found")
         return False
     
     # Try loading model
     try:
         face_swapper = onnxruntime.InferenceSession(
-            reactor_path, 
+            face_swap_path, 
             providers=PROVIDERS
         )
-        print("✅ ReActor model loaded successfully")
+        print("✅ Face swap model loaded successfully")
     except Exception as e:
-        print(f"❌ Failed to load ReActor model: {e}")
+        print(f"❌ Failed to load face swap model: {e}")
         return False
         
     print("✅ All ReActor tests passed")

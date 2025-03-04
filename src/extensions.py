@@ -50,7 +50,7 @@ def init_extensions():
         face_analyzer.prepare(ctx_id=0, det_size=(640, 640))
         
         face_swapper = onnxruntime.InferenceSession(
-            MODEL_PATHS["reactor_face"], 
+            MODEL_PATHS["face_swap"], 
             providers=PROVIDERS
         )
         print("✅ ReActor models loaded successfully")
@@ -59,18 +59,25 @@ def init_extensions():
 
 def download_image(image_url_or_base64):
     """Download or decode an image from URL or base64"""
-    if image_url_or_base64.startswith('http'):
-        # It's a URL
-        response = requests.get(image_url_or_base64, timeout=10)
-        response.raise_for_status()
-        return Image.open(BytesIO(response.content)).convert("RGB")
-    elif image_url_or_base64.startswith('data:image'):
-        # It's base64
-        base64_data = image_url_or_base64.split(',')[1]
-        image_data = base64.b64decode(base64_data)
-        return Image.open(BytesIO(image_data)).convert("RGB")
-    else:
-        raise ValueError("Image must be a URL or base64 data")
+    try:
+        if image_url_or_base64.startswith('http'):
+            # It's a URL
+            response = requests.get(image_url_or_base64, timeout=10)
+            response.raise_for_status()
+            return Image.open(BytesIO(response.content)).convert("RGB")
+        elif image_url_or_base64.startswith('data:image'):
+            # It's base64
+            base64_data = image_url_or_base64.split(',')[1]
+            image_data = base64.b64decode(base64_data)
+            return Image.open(BytesIO(image_data)).convert("RGB")
+        else:
+            raise ValueError("Image must be a URL or base64 data")
+    except requests.exceptions.RequestException as e:
+        raise ValueError(f"Error downloading image: {str(e)}")
+    except base64.binascii.Error as e:
+        raise ValueError(f"Error decoding base64 image: {str(e)}")
+    except Exception as e:
+        raise ValueError(f"Error processing image: {str(e)}")
 
 def preprocess_image(image, control_type):
     """Preprocess image for ControlNet"""

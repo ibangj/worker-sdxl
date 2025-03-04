@@ -9,30 +9,16 @@ RUN python3.11 -m pip install --upgrade pip && \
     python3.11 -m pip install --upgrade -r /requirements.txt --no-cache-dir && \
     rm /requirements.txt
 
-# Install system dependencies
-RUN sudo apt-get update && \
-    sudo apt-get install -y python3-dev build-essential libssl-dev
+# Create necessary directories for models
+RUN mkdir -p /controlnet /models/face
 
-# Cache Models
+# Cache Models (includes SDXL models, ControlNet, and face models)
 COPY builder/cache_models.py /cache_models.py
 RUN python3.11 /cache_models.py && \
     rm /cache_models.py
 
-# Install ControlNet and ReActor dependencies
-RUN pip install diffusers==0.21.4 transformers==4.31.0 accelerate==0.21.0
-RUN pip install opencv-python-headless insightface onnxruntime requests
-
-# Create directories for models
-RUN mkdir -p /controlnet /reactor
-
 # Add src files (Worker Template)
 ADD src .
 
-# Add startup script to download models at runtime
-COPY src/config.py /config.py
-COPY src/download_models.py /download_models.py
-COPY src/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
-
-# Use the entrypoint script
-ENTRYPOINT ["/entrypoint.sh"]
+# Start the handler
+CMD python3.11 -u /rp_handler.py

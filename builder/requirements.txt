@@ -1,5 +1,7 @@
 runpod~=1.7.0
 hf_transfer
+requests
+tqdm
 
 diffusers==0.21.4
 transformers==4.34.0
@@ -8,7 +10,11 @@ safetensors==0.3.2
 scipy == 1.11.2
 numpy>=1.26.1
 PyWavelets>=1.1.1
-opencv-python>=4.8.1.78
+opencv-python-headless>=4.8.1.78
 invisible-watermark==0.2.0
 xformers==0.0.23
 torch --index-url https://download.pytorch.org/whl/cu118
+
+# Additional dependencies for face models and ControlNet
+insightface
+onnxruntime-gpu

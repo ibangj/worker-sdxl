@@ -25,6 +25,19 @@ from runpod.serverless.utils.rp_validator import validate
 from rp_schemas import INPUT_SCHEMA
 # Import the extensions module
 from extensions import init_extensions, process_with_controlnet, apply_reactor, download_image, EXTENSIONS_SCHEMA
+from config import MODEL_PATHS
+
+# Check if models exist, download if needed
+missing_models = False
+for model_path in MODEL_PATHS.values():
+    if not os.path.exists(model_path):
+        print(f"Model not found: {model_path}")
+        missing_models = True
+
+if missing_models:
+    print("Some models are missing, running download script...")
+    import download_models
+    download_models.main()
 
 torch.cuda.empty_cache()
 
@@ -51,7 +64,7 @@ class ModelHandler:
         )
         base_pipe = base_pipe.to("cuda", silence_dtype_warnings=True)
         base_pipe.enable_xformers_memory_efficient_attention()
-        return base_pipe
+        self.base = base_pipe
 
     def load_refiner(self):
         vae = AutoencoderKL.from_pretrained(
@@ -62,15 +75,15 @@ class ModelHandler:
         )
         refiner_pipe = refiner_pipe.to("cuda", silence_dtype_warnings=True)
         refiner_pipe.enable_xformers_memory_efficient_attention()
-        return refiner_pipe
+        self.refiner = refiner_pipe
 
     def load_models(self):
         with concurrent.futures.ThreadPoolExecutor() as executor:
-            future_base = executor.submit(self.load_base)
-            future_refiner = executor.submit(self.load_refiner)
-
-            self.base = future_base.result()
-            self.refiner = future_refiner.result()
+            base_future = executor.submit(self.load_base)
+            refiner_future = executor.submit(self.load_refiner)
+            
+            # Wait for both futures to complete
+            concurrent.futures.wait([base_future, refiner_future])
 
 
 MODELS = ModelHandler()
@@ -230,6 +243,45 @@ def generate_image(job):
         results['refresh_worker'] = True
 
     return results
+
+
+def check_and_download_model(local_path, url):
+    """
+    Check if a model exists locally and download it if not.
+    This is a utility function that can be used for on-demand model downloading.
+    """
+    if os.path.exists(local_path):
+        print(f"✅ Model already exists at {local_path}")
+        return True
+    
+    print(f"🔍 Model not found locally, downloading from {url}...")
+    try:
+        import requests
+        from tqdm import tqdm
+        
+        # Create directory if it doesn't exist
+        os.makedirs(os.path.dirname(local_path), exist_ok=True)
+        
+        # Download with progress bar
+        response = requests.get(url, stream=True)
+        total_size = int(response.headers.get('content-length', 0))
+        
+        with open(local_path, 'wb') as file, tqdm(
+            desc=local_path,
+            total=total_size,
+            unit='B',
+            unit_scale=True,
+            unit_divisor=1024,
+        ) as bar:
+            for data in response.iter_content(chunk_size=1024):
+                size = file.write(data)
+                bar.update(size)
+                
+        print(f"✅ Successfully downloaded to {local_path}")
+        return True
+    except Exception as e:
+        print(f"❌ Error downloading model: {e}")
+        return False
 
 
 runpod.serverless.start({"handler": generate_image})
